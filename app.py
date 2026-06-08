@@ -146,11 +146,22 @@ with tab_chat:
         if st.button("Clear Chat", key="clear_chat"):
             reset_chat()
 
+    mode_descriptions = {
+        "Simple": "Concise, plain-language guidance for quick decisions.",
+        "Standard": "Balanced replies with practical technical clarity.",
+        "Advanced": "Deep reasoning, diagnostics, and step-by-step explanation."
+    }
+    mode_colors = {
+        "Simple": "#dbeafe",
+        "Standard": "#e2f0d9",
+        "Advanced": "#f9f0d7"
+    }
+    selected_mode = st.session_state.query_mode
     st.markdown(
-        f"**Current mode:** {st.session_state.query_mode}  \n"
-        "- Simple = concise guidance.  \n"
-        "- Standard = balanced, practical response.  \n"
-        "- Advanced = deep technical reasoning."
+        f"<div style='background:{mode_colors[selected_mode]}; padding:14px; border-radius:8px; margin-bottom:12px;'>"
+        f"<strong>{selected_mode} mode</strong>: {mode_descriptions[selected_mode]}"
+        "</div>",
+        unsafe_allow_html=True,
     )
 
     for message in st.session_state.chat_history:
