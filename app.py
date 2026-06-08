@@ -32,6 +32,7 @@ from physics.tire_deg import predict_tire_degradation_penalty
 st.set_page_config(page_title="WEC & IMSA Strategy Assistant", layout="wide")
 
 # --- DATABASE SETUP ---
+
 def execute_safe_query(sql_query: str) -> pd.DataFrame:
     forbidden = ["drop", "delete", "insert", "update", "alter", "truncate"]
     if any(k in sql_query.lower() for k in forbidden):
@@ -47,6 +48,37 @@ def execute_safe_query(sql_query: str) -> pd.DataFrame:
         return pd.DataFrame()
     finally:
         conn.close()
+
+
+def get_simple_prompt() -> str:
+    return "Answer in clear, concise plain language with a focus on the core insight."
+
+
+def get_standard_prompt() -> str:
+    return "Answer with balanced clarity and technical accuracy."
+
+
+def get_advanced_prompt() -> str:
+    return "Answer with detailed technical reasoning, diagnostics, and step-by-step explanation."
+
+
+def get_mode_prompt(mode: str) -> str:
+    if mode == "Simple":
+        return get_simple_prompt()
+    if mode == "Advanced":
+        return get_advanced_prompt()
+    return get_standard_prompt()
+
+
+def reset_chat():
+    st.session_state.chat_history = []
+    st.session_state.user_query = ""
+
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "query_mode" not in st.session_state:
+    st.session_state.query_mode = "Standard"
 
 
 def get_series_options() -> List[str]:
@@ -95,21 +127,52 @@ with tab_chat:
         llm = get_llm()
     except Exception as e:
         st.error(f"LLM initialization error: {e}. Verify configuration and that the model service is reachable.")
-    
-    user_query = st.chat_input("Ask about strategy, competitor sector times, or request hybrid fault code troubleshooting...")
+
+    selected_mode = st.session_state.query_mode
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
+        simple_label = "Simple ✅" if selected_mode == "Simple" else "Simple"
+        if st.button(simple_label, key="mode_simple"):
+            st.session_state.query_mode = "Simple"
+    with col2:
+        standard_label = "Standard ✅" if selected_mode == "Standard" else "Standard"
+        if st.button(standard_label, key="mode_standard"):
+            st.session_state.query_mode = "Standard"
+    with col3:
+        advanced_label = "Advanced ✅" if selected_mode == "Advanced" else "Advanced"
+        if st.button(advanced_label, key="mode_advanced"):
+            st.session_state.query_mode = "Advanced"
+    with col4:
+        if st.button("Clear Chat", key="clear_chat"):
+            reset_chat()
+
+    st.markdown(
+        f"**Current mode:** {st.session_state.query_mode}  \n"
+        "- Simple = concise guidance.  \n"
+        "- Standard = balanced, practical response.  \n"
+        "- Advanced = deep technical reasoning."
+    )
+
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+    user_query = st.chat_input(
+        "Ask about strategy, competitor sector times, or request hybrid fault code troubleshooting...",
+        key="user_query",
+    )
 
     if user_query:
-        with st.chat_message("user"):
-            st.write(user_query)
+        st.session_state.chat_history.append({"role": "user", "content": user_query})
 
         with st.chat_message("assistant"):
             with st.spinner("Processing local engines..."):
                 intent = route_query_source(user_query)
+                prompt_modifier = get_mode_prompt(st.session_state.query_mode)
 
                 if intent == "SQL":
                     st.caption("🤖 *Routing to: SQLite Database Timing Engine*")
                     
-                    # Text-to-SQL logic
                     sql_gen_prompt = f"""
                     Given the SQLite table 'laps' with fields:
                     series_code, class, driver_name, lap_time_s, s1_s, s2_s, s3_s, pit_time_s, track_temp_f, raining.
@@ -122,22 +185,28 @@ with tab_chat:
                     df_results = execute_safe_query(sql_query)
                     if not df_results.empty:
                         st.dataframe(df_results)
-                        summary = llm.invoke(f"Summarize these timing database results for the engineer: {df_results.to_string()}")
-                        st.write(summary)
+                        summary_prompt = f"{prompt_modifier} Summarize these timing database results for the engineer: {df_results.to_string()}"
+                        assistant_text = llm.invoke(summary_prompt)
+                        st.write(assistant_text)
                     else:
                         st.warning("No timing records matched your query.")
+                        assistant_text = "No timing records matched the query."
                 else:
                     st.caption("📖 *Routing to: Advanced Technical Manual RAG*")
+                    query_text = f"{prompt_modifier} {user_query}"
                     try:
-                        # Direct RAG over any PDFs in data/manuals/
                         documents = SimpleDirectoryReader("data/manuals").load_data()
                         index = VectorStoreIndex.from_documents(documents)
                         query_engine = index.as_query_engine()
-                        response = query_engine.query(user_query)
-                        st.write(str(response))
+                        response = query_engine.query(query_text)
+                        assistant_text = str(response)
+                        st.write(assistant_text)
                     except Exception:
                         st.info("Place technical PDFs (e.g. Bosch MGU/MCU troubleshooting manuals) inside 'data/manuals' to enable advanced diagnostic RAG.")
-                        st.write(llm.invoke(user_query))
+                        assistant_text = llm.invoke(query_text)
+                        st.write(assistant_text)
+
+        st.session_state.chat_history.append({"role": "assistant", "content": assistant_text})
 
 # --- TAB 2: PHYSICS PREDICTIONS ---
 with tab_physics:
