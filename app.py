@@ -1,11 +1,13 @@
 import streamlit as st
 import sqlite3
+from typing import Optional, List, Any
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llm_provider import get_llm
 
-def route_query_source(user_query: str | None) -> str:
+def route_query_source(user_query: Optional[str]) -> str:
     """
     Determines if the question requires looking at the timing database 
     or parsing the technical/event PDF documents.
@@ -47,7 +49,7 @@ def execute_safe_query(sql_query: str) -> pd.DataFrame:
         conn.close()
 
 
-def get_series_options() -> list[str]:
+def get_series_options() -> List[str]:
     """Load available series from the laps database, or fall back to defaults."""
     conn = sqlite3.connect("trackside_timing.db")
     try:
@@ -88,6 +90,7 @@ with tab_chat:
     st.subheader("Interactive Strategy & Diagnostics")
     
     # Initialize LLM (provider selectable via env `LLM_PROVIDER`)
+    llm: Any = None
     try:
         llm = get_llm()
     except Exception as e:

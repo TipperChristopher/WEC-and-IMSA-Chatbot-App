@@ -3,7 +3,7 @@ from typing import Literal, Dict, Any
 from llm_provider import get_llm
 from langchain_core.tools import tool
 
-llm = get_llm()
+llm: Any = get_llm()
 
 @tool
 def route_engineer_query(query: str) -> Literal["sql_agent", "rag_diagnostics"]:

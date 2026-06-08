@@ -1,7 +1,9 @@
 import os
 import time
 import random
-from typing import Any
+from typing import Any, Callable, TypeVar
+
+T = TypeVar("T")
 
 def _make_ollama(base_url: str, model: str) -> Any:
     from langchain_community.llms import Ollama
@@ -22,7 +24,7 @@ class OpenAIWrapper:
         self.model = model
 
     def invoke(self, prompt: str) -> str:
-        def _call():
+        def _call() -> str:
             # Try chat completion then fallback to completion
             try:
                 resp = self._openai.ChatCompletion.create(
@@ -38,8 +40,8 @@ class OpenAIWrapper:
         return _perform_with_retries(_call)
 
 
-def _perform_with_retries(func, max_attempts: int = 3, base_delay: float = 0.5):
-    last_exc = None
+def _perform_with_retries(func: Callable[[], T], max_attempts: int = 3, base_delay: float = 0.5) -> T:
+    last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
             return func()
@@ -51,11 +53,14 @@ def _perform_with_retries(func, max_attempts: int = 3, base_delay: float = 0.5):
                 raise
             sleep_for = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
             time.sleep(sleep_for)
-    raise last_exc
+    # mypy shouldn't reach here, but raise the last exception to satisfy types
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Retry failed without exception")
 
 
 class AzureOpenAIWrapper:
-    def __init__(self, deployment: str):
+    def __init__(self, deployment: str) -> None:
         try:
             import openai
         except Exception as e:
@@ -86,6 +91,37 @@ class AzureOpenAIWrapper:
         return _perform_with_retries(_call)
 
 
+class AzureNativeOpenAIWrapper:
+    def __init__(self, deployment: str) -> None:
+        # Import dynamically to avoid static import errors in editors (Pylance)
+        try:
+            import importlib
+
+            openai_mod = importlib.import_module("azure.ai.openai")
+            creds_mod = importlib.import_module("azure.core.credentials")
+            OpenAIClient = getattr(openai_mod, "OpenAIClient")
+            AzureKeyCredential = getattr(creds_mod, "AzureKeyCredential")
+        except Exception as e:
+            raise RuntimeError("azure-ai-openai package required for native Azure provider") from e
+
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        key = os.getenv("AZURE_OPENAI_KEY")
+        if not endpoint or not key:
+            raise RuntimeError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY must be set for Azure provider")
+
+        credential = AzureKeyCredential(key)
+        self._client = OpenAIClient(endpoint, credential)
+        self.deployment = deployment
+
+    def invoke(self, prompt: str) -> str:
+        def _call():
+            response = self._client.get_chat_completions(self.deployment, messages=[{"role": "user", "content": prompt}])
+            # response.choices[0].message.content is the expected shape
+            return response.choices[0].message.content
+
+        return _perform_with_retries(_call)
+
+
 def get_llm():
     provider = os.getenv("LLM_PROVIDER", "ollama").lower()
     if provider == "ollama":
@@ -99,6 +135,12 @@ def get_llm():
         deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("AZURE_OPENAI_MODEL")
         if not deployment:
             raise RuntimeError("AZURE_OPENAI_DEPLOYMENT (or AZURE_OPENAI_MODEL) must be set for Azure provider")
-        return AzureOpenAIWrapper(deployment=deployment)
+
+        # Prefer native Azure SDK if available
+        try:
+            return AzureNativeOpenAIWrapper(deployment=deployment)
+        except Exception:
+            # Fallback to openai-compatible wrapper
+            return AzureOpenAIWrapper(deployment=deployment)
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")

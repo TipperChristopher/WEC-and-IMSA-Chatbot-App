@@ -58,6 +58,7 @@ Configuration: external provider fallback
 - The code now uses a centralized provider helper `llm_provider.py` that reads `LLM_PROVIDER` and initializes the appropriate client.
 
 - To use Azure OpenAI, set the following environment variables (example):
+ - To use Azure OpenAI, set the following environment variables (example):
 
    ```powershell
    setx LLM_PROVIDER azure
@@ -66,4 +67,52 @@ Configuration: external provider fallback
    setx AZURE_OPENAI_DEPLOYMENT <deployment_name>
    ```
 
-   The provider will try to use the `openai` package configured for Azure. If you install `azure-ai-openai`, the native SDK can also be used in a later update.
+ - Native SDK (preferred): this project prefers the native `azure-ai-openai` SDK when available. Install it with:
+
+   ```powershell
+   pip install azure-ai-openai
+   ```
+
+   When installed, the app will use `azure.ai.openai.OpenAIClient` (recommended). If the native SDK is not installed, the code falls back to using the `openai` package configured for Azure.
+
+VS Code / Pylance troubleshooting
+- If you see `Import "azure.ai.openai" could not be resolved` (Pylance), ensure the package is installed into the Python interpreter selected by VS Code:
+
+   1. In VS Code, open the Command Palette and run `Python: Select Interpreter` — choose the environment you use to run the app.
+   2. Install the native SDK (or `openai`) into that environment, for example:
+
+       ```powershell
+       pip install -r requirements.txt
+       pip install azure-ai-openai
+       ```
+
+   3. Restart VS Code or run the `Developer: Reload Window` command.
+
+- Alternative: keep imports dynamic (already implemented) — the app will only raise an error at runtime if the native SDK is missing when `LLM_PROVIDER=azure`.
+
+- If Pylance still flags unresolved imports, you can configure `python.analysis.extraPaths` in `.vscode/settings.json` to point to your environment's site-packages folder, or ensure your workspace uses the same interpreter.
+
+Developer setup
+1. Create a virtual environment and activate it (PowerShell):
+
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+2. Install runtime and development dependencies:
+
+   ```powershell
+   pip install -r requirements.txt
+   pip install -r dev-requirements.txt
+   ```
+
+3. Install and enable pre-commit hooks:
+
+   ```powershell
+   pre-commit install
+   pre-commit run --all-files
+   ```
+
+CI
+- A GitHub Actions workflow is included at `.github/workflows/ci.yml` that runs `black --check`, `isort --check-only`, `flake8`, `mypy`, and `pytest` on push and pull requests to `main`.
