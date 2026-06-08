@@ -56,3 +56,14 @@ Configuration: external provider fallback
    ```
 
 - The code now uses a centralized provider helper `llm_provider.py` that reads `LLM_PROVIDER` and initializes the appropriate client.
+
+- To use Azure OpenAI, set the following environment variables (example):
+
+   ```powershell
+   setx LLM_PROVIDER azure
+   setx AZURE_OPENAI_ENDPOINT https://your-resource-name.openai.azure.com/
+   setx AZURE_OPENAI_KEY <your_api_key>
+   setx AZURE_OPENAI_DEPLOYMENT <deployment_name>
+   ```
+
+   The provider will try to use the `openai` package configured for Azure. If you install `azure-ai-openai`, the native SDK can also be used in a later update.
