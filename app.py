@@ -2,8 +2,8 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
-from langchain_community.llms import Ollama
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llm_provider import get_llm
 
 def route_query_source(user_query: str | None) -> str:
     """
@@ -87,11 +87,11 @@ tab_chat, tab_physics = st.tabs(["Offline Chatbot", "Physics Predictions"])
 with tab_chat:
     st.subheader("Interactive Strategy & Diagnostics")
     
-    # Initialize Local LLM via Ollama
+    # Initialize LLM (provider selectable via env `LLM_PROVIDER`)
     try:
-        llm = Ollama(model="qwen2.5-coder:7b", base_url="http://localhost:11434")
+        llm = get_llm()
     except Exception as e:
-        st.error("Could not reach local Ollama server. Verify that Ollama is running in your background taskbar.")
+        st.error(f"LLM initialization error: {e}. Verify configuration and that the model service is reachable.")
     
     user_query = st.chat_input("Ask about strategy, competitor sector times, or request hybrid fault code troubleshooting...")
 

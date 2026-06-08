@@ -1,9 +1,9 @@
 # diagnostics/orchestrator.py
 from typing import Literal, Dict, Any
-from langchain_community.llms import Ollama
+from llm_provider import get_llm
 from langchain_core.tools import tool
 
-llm = Ollama(model="qwen2.5-coder:7b", base_url="http://localhost:11434") [5]
+llm = get_llm()
 
 @tool
 def route_engineer_query(query: str) -> Literal["sql_agent", "rag_diagnostics"]:
