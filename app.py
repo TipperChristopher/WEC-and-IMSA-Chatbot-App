@@ -5,6 +5,21 @@ import matplotlib.pyplot as plt
 from langchain_community.llms import Ollama
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
+def route_query_source(user_query: str) -> str:
+    """
+    Determines if the question requires looking at the timing database 
+    or parsing the technical/event PDF documents.
+    """
+    query_lower = user_query.lower()
+    
+    # Timing queries -> SQL timing database
+    sql_keywords = ["fastest lap", "sector", "lap time", "gap", "position", "pit stop duration"]
+    if any(k in query_lower for k in sql_keywords):
+        return "SQL"
+        
+    # Schedule, entry lists, rules, or diagnostics -> RAG PDF Engine
+    return "RAG"
+
 # This line must match your folder and file structure perfectly:
 from physics.fuel_burn import calculate_fuel_corrected_time
 from physics.tire_deg import predict_tire_degradation_penalty
