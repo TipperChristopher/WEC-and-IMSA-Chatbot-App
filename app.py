@@ -34,14 +34,16 @@ st.set_page_config(page_title="WEC & IMSA Strategy Assistant", layout="wide")
 st.markdown(
     """
     <style>
-    button[role='button'] {
-        background-color: #f0f0f0 !important;
+    button[role='button'],
+    button[role='button'] * {
+        background-color: #000000 !important;
         color: #111 !important;
         border-color: #d2d2d2 !important;
     }
     button[role='button']:focus,
     button[role='button']:active,
-    button[role='button']:hover {
+    button[role='button']:hover,
+    button[role='button']:focus-visible {
         background-color: #e8e8e8 !important;
         color: #111 !important;
         outline: none !important;
