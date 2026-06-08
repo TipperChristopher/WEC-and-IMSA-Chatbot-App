@@ -99,14 +99,49 @@ with tab_chat:
         with st.chat_message("assistant"):
             with st.spinner("Processing local engines..."):
                 # Determine query intent: Diagnostics vs Database Timing
-                routing_prompt = f"""
-                You are a senior Race Strategy Engineer. Categorize the user's intent.
-                If the query asks about manual instructions, hybrid codes, rules, or diagnostics, output 'RAG'.
-                If the query asks to search lap times, sector times, positions, or ELO, output 'SQL'.
-                Query: "{user_query}"
-                Output exactly one word: 'RAG' or 'SQL'.
+                if user_query:
+                    with st.chat_message("user"):
+                        st.write(user_query)
+        
+    with st.chat_message("assistant"):
+        with st.spinner("Processing local engines..."):
+            
+            # Use the fast, local keyword router instead of invoking the LLM
+            intent = route_query_source(user_query)
+            
+            if intent == "SQL":
+                st.caption("🤖 *Routing to: SQLite Database Timing Engine*")
+                
+                # Text-to-SQL logic
+                sql_gen_prompt = f"""
+                Given the SQLite table 'laps' with fields:
+                series_code, class, driver_name, lap_time_s, s1_s, s2_s, s3_s, pit_time_s, track_temp_f, raining.
+                Generate a clean SQL SELECT query to answer: "{user_query}".
+                Respond with ONLY the raw SQL query, no markdown blocks, no format.
                 """
-                intent = llm.invoke(routing_prompt).strip().upper()
+                sql_query = llm.invoke(sql_gen_prompt).strip().replace("`", "").replace("sql", "")
+                st.code(sql_query, language="sql")
+                
+                df_results = execute_safe_query(sql_query)
+                if not df_results.empty:
+                    st.dataframe(df_results)
+                    summary = llm.invoke(f"Summarize these timing database results for the engineer: {df_results.to_string()}")
+                    st.write(summary)
+                else:
+                    st.warning("No timing records matched your query.")
+            
+            else:
+                st.caption("📖 *Routing to: Advanced Technical Manual RAG*")
+                try:
+                    # Direct RAG over any PDFs in data/manuals/
+                    documents = SimpleDirectoryReader("data/manuals").load_data()
+                    index = VectorStoreIndex.from_documents(documents)
+                    query_engine = index.as_query_engine()
+                    response = query_engine.query(user_query)
+                    st.write(str(response))
+                except Exception as e:
+                    st.info("Place technical PDFs (e.g. Bosch MGU/MCU troubleshooting manuals) inside 'data/manuals' to enable advanced diagnostic RAG.")
+                    st.write(llm.invoke(user_query))
                 
                 if "SQL" in intent:
                     st.caption("🤖 *Routing to: SQLite Database Timing Engine*")
