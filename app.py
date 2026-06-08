@@ -152,9 +152,9 @@ with tab_chat:
         "Advanced": "Deep reasoning, diagnostics, and step-by-step explanation."
     }
     mode_colors = {
-        "Simple": "#dbeafe",
-        "Standard": "#e2f0d9",
-        "Advanced": "#f9f0d7"
+        "Simple": "#eef4ff",
+        "Standard": "#eef7ef",
+        "Advanced": "#f8f4ec"
     }
     selected_mode = st.session_state.query_mode
     st.markdown(
