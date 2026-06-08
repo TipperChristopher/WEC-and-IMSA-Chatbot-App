@@ -1,4 +1,5 @@
 # app.py
+# app.py
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -6,7 +7,7 @@ import matplotlib.pyplot as plt
 from langchain_community.llms import Ollama
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 
-# Import our custom physics modules
+# This line must match your folder and file structure perfectly:
 from physics.fuel_burn import calculate_fuel_corrected_time
 from physics.tire_deg import predict_tire_degradation_penalty
 
