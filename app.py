@@ -64,7 +64,7 @@ st.title("🏎️ WEC & IMSA Cognitive Strategy & Diagnostics Assistant")
 st.markdown("---")
 
 # --- TAB 1: OFF-LINE CHATBOT ---
-tab_chat, tab_physics = st.tabs()
+tab_chat, tab_physics = st.tabs(["Offline Chatbot", "Physics Predictions"])
 
 with tab_chat:
     st.subheader("Interactive Strategy & Diagnostics")
