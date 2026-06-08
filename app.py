@@ -1,5 +1,3 @@
-# app.py
-# app.py
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -30,14 +28,30 @@ def execute_safe_query(sql_query: str) -> pd.DataFrame:
     finally:
         conn.close()
 
+
+def get_series_options() -> list[str]:
+    """Load available series from the laps database, or fall back to defaults."""
+    conn = sqlite3.connect("trackside_timing.db")
+    try:
+        df = pd.read_sql_query("SELECT DISTINCT series_code FROM laps ORDER BY series_code", conn)
+        if not df.empty:
+            return df["series_code"].astype(str).tolist()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    return ["WEC", "IMSA"]
+
 # --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.header("⚡ Trackside Configurations")
     # Provide the available series as a list of options
-    series = st.selectbox("Championship Series",)
+    series_options = get_series_options()
+    series = st.selectbox("Championship Series", series_options)
 
-# Provide the tire compound sets as a list of options
-    compound = st.selectbox("Tire Compound Set",)
+    # Provide the tire compound sets as a list of options
+    compound = st.selectbox("Tire Compound Set", ["Soft", "Medium", "Hard"])
     track_temp = st.slider("Track Temperature (°F)", 60, 140, 95)
     stint_laps = st.number_input("Stint Laps Forecast", min_value=5, max_value=40, value=20)
     
