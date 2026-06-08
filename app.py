@@ -33,7 +33,10 @@ def execute_safe_query(sql_query: str) -> pd.DataFrame:
 # --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
     st.header("⚡ Trackside Configurations")
+    # Provide the available series as a list of options
     series = st.selectbox("Championship Series",)
+
+# Provide the tire compound sets as a list of options
     compound = st.selectbox("Tire Compound Set",)
     track_temp = st.slider("Track Temperature (°F)", 60, 140, 95)
     stint_laps = st.number_input("Stint Laps Forecast", min_value=5, max_value=40, value=20)
