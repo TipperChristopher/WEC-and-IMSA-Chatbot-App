@@ -31,6 +31,27 @@ from physics.tire_deg import predict_tire_degradation_penalty
 
 st.set_page_config(page_title="WEC & IMSA Strategy Assistant", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    button[role='button'] {
+        background-color: #f0f0f0 !important;
+        color: #111 !important;
+        border-color: #d2d2d2 !important;
+    }
+    button[role='button']:focus,
+    button[role='button']:active,
+    button[role='button']:hover {
+        background-color: #e8e8e8 !important;
+        color: #111 !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # --- DATABASE SETUP ---
 
 def execute_safe_query(sql_query: str) -> pd.DataFrame:
