@@ -1,33 +1,55 @@
-import streamlit as st
+import os
+import sys
 import sqlite3
+import streamlit as st
 from typing import Optional, List, Any
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import requests
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from backend_utils import (
+    execute_safe_query,
+    fetch_series_options,
+    get_mode_prompt,
+    route_query_source,
+)
 from llm_provider import get_llm
-
-def route_query_source(user_query: Optional[str]) -> str:
-    """
-    Determines if the question requires looking at the timing database 
-    or parsing the technical/event PDF documents.
-    """
-    if not user_query:
-        return "RAG"
-
-    query_lower = user_query.lower()
-    
-    # Timing queries -> SQL timing database
-    sql_keywords = ["fastest lap", "sector", "lap time", "gap", "position", "pit stop duration"]
-    if any(k in query_lower for k in sql_keywords):
-        return "SQL"
-        
-    # Schedule, entry lists, rules, or diagnostics -> RAG PDF Engine
-    return "RAG"
 
 # This line must match your folder and file structure perfectly:
 from physics.fuel_burn import calculate_fuel_corrected_time
 from physics.tire_deg import predict_tire_degradation_penalty
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+USE_BACKEND = os.getenv("BACKEND_ENABLED", "false").lower() in {"1", "true", "yes"}
+
+
+def call_backend_query(query: str, mode: str) -> dict:
+    response = requests.post(
+        f"{BACKEND_URL}/v1/query",
+        json={"query": query, "mode": mode},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_series_options() -> List[str]:
+    if USE_BACKEND:
+        try:
+            resp = requests.get(f"{BACKEND_URL}/v1/series-options", timeout=15)
+            resp.raise_for_status()
+            payload = resp.json()
+            if isinstance(payload, dict) and "series_options" in payload:
+                return payload["series_options"]
+        except Exception:
+            st.warning("Backend series lookup failed, using local database fallback.")
+    return fetch_series_options()
 
 st.set_page_config(page_title="WEC & IMSA Strategy Assistant", layout="wide")
 
@@ -53,45 +75,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-# --- DATABASE SETUP ---
-
-def execute_safe_query(sql_query: str) -> pd.DataFrame:
-    forbidden = ["drop", "delete", "insert", "update", "alter", "truncate"]
-    if any(k in sql_query.lower() for k in forbidden):
-        st.error("🛑 Security Block: Destructive SQL query rejected.")
-        return pd.DataFrame()
-    
-    conn = sqlite3.connect("trackside_timing.db")
-    try:
-        df = pd.read_sql_query(sql_query, conn)
-        return df
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return pd.DataFrame()
-    finally:
-        conn.close()
-
-
-def get_simple_prompt() -> str:
-    return "Answer in clear, concise plain language with a focus on the core insight."
-
-
-def get_standard_prompt() -> str:
-    return "Answer with balanced clarity and technical accuracy."
-
-
-def get_advanced_prompt() -> str:
-    return "Answer with detailed technical reasoning, diagnostics, and step-by-step explanation."
-
-
-def get_mode_prompt(mode: str) -> str:
-    if mode == "Simple":
-        return get_simple_prompt()
-    if mode == "Advanced":
-        return get_advanced_prompt()
-    return get_standard_prompt()
-
 
 def reset_chat():
     st.session_state.chat_history = []
@@ -200,45 +183,68 @@ with tab_chat:
         st.session_state.chat_history.append({"role": "user", "content": user_query})
 
         with st.chat_message("assistant"):
-            with st.spinner("Processing local engines..."):
-                intent = route_query_source(user_query)
-                prompt_modifier = get_mode_prompt(st.session_state.query_mode)
+            with st.spinner("Processing engines..."):
+                assistant_text = ""
+                use_local = False
 
-                if intent == "SQL":
-                    st.caption("🤖 *Routing to: SQLite Database Timing Engine*")
-                    
-                    sql_gen_prompt = f"""
-                    Given the SQLite table 'laps' with fields:
-                    series_code, class, driver_name, lap_time_s, s1_s, s2_s, s3_s, pit_time_s, track_temp_f, raining.
-                    Generate a clean SQL SELECT query to answer: "{user_query}".
-                    Respond with ONLY the raw SQL query, no markdown blocks, no format.
-                    """
-                    sql_query = llm.invoke(sql_gen_prompt).strip().replace("`", "").replace("sql", "")
-                    st.code(sql_query, language="sql")
-                    
-                    df_results = execute_safe_query(sql_query)
-                    if not df_results.empty:
-                        st.dataframe(df_results)
-                        summary_prompt = f"{prompt_modifier} Summarize these timing database results for the engineer: {df_results.to_string()}"
-                        assistant_text = llm.invoke(summary_prompt)
-                        st.write(assistant_text)
-                    else:
-                        st.warning("No timing records matched your query.")
-                        assistant_text = "No timing records matched the query."
-                else:
-                    st.caption("📖 *Routing to: Advanced Technical Manual RAG*")
-                    query_text = f"{prompt_modifier} {user_query}"
+                if USE_BACKEND:
                     try:
-                        documents = SimpleDirectoryReader("data/manuals").load_data()
-                        index = VectorStoreIndex.from_documents(documents)
-                        query_engine = index.as_query_engine()
-                        response = query_engine.query(query_text)
-                        assistant_text = str(response)
-                        st.write(assistant_text)
+                        response = call_backend_query(user_query, st.session_state.query_mode)
+                        intent = response.get("intent", "RAG")
+                        if intent == "SQL":
+                            st.caption("🤖 *Routing to: SQLite Database Timing Engine via backend*")
+                            if response.get("sql"):
+                                st.code(response["sql"], language="sql")
+                            if response.get("results"):
+                                st.dataframe(response["results"])
+                        else:
+                            st.caption("📖 *Routing to: Advanced Technical Manual RAG via backend*")
+
+                        assistant_text = response.get("assistant_text", "")
+                        if response.get("details"):
+                            st.info(response["details"])
                     except Exception:
-                        st.info("Place technical PDFs (e.g. Bosch MGU/MCU troubleshooting manuals) inside 'data/manuals' to enable advanced diagnostic RAG.")
-                        assistant_text = llm.invoke(query_text)
-                        st.write(assistant_text)
+                        st.warning("Backend request failed, falling back to local processing.")
+                        use_local = True
+
+                if not USE_BACKEND or use_local:
+                    intent = route_query_source(user_query)
+                    prompt_modifier = get_mode_prompt(st.session_state.query_mode)
+
+                    if intent == "SQL":
+                        st.caption("🤖 *Routing to: SQLite Database Timing Engine*")
+                        sql_gen_prompt = f"""
+                        Given the SQLite table 'laps' with fields:
+                        series_code, class, driver_name, lap_time_s, s1_s, s2_s, s3_s, pit_time_s, track_temp_f, raining.
+                        Generate a clean SQL SELECT query to answer: "{user_query}".
+                        Respond with ONLY the raw SQL query, no markdown blocks, no format.
+                        """
+                        sql_query = llm.invoke(sql_gen_prompt).strip().replace("`", "").replace("sql", "")
+                        st.code(sql_query, language="sql")
+
+                        df_results = execute_safe_query(sql_query)
+                        if not df_results.empty:
+                            st.dataframe(df_results)
+                            summary_prompt = f"{prompt_modifier} Summarize these timing database results for the engineer: {df_results.to_string()}"
+                            assistant_text = llm.invoke(summary_prompt)
+                            st.write(assistant_text)
+                        else:
+                            st.warning("No timing records matched your query.")
+                            assistant_text = "No timing records matched the query."
+                    else:
+                        st.caption("📖 *Routing to: Advanced Technical Manual RAG*")
+                        query_text = f"{prompt_modifier} {user_query}"
+                        try:
+                            documents = SimpleDirectoryReader("data/manuals").load_data()
+                            index = VectorStoreIndex.from_documents(documents)
+                            query_engine = index.as_query_engine()
+                            response = query_engine.query(query_text)
+                            assistant_text = str(response)
+                            st.write(assistant_text)
+                        except Exception:
+                            st.info("Place technical PDFs (e.g. Bosch MGU/MCU troubleshooting manuals) inside 'data/manuals' to enable advanced diagnostic RAG.")
+                            assistant_text = llm.invoke(query_text)
+                            st.write(assistant_text)
 
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_text})
 

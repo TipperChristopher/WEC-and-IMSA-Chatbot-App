@@ -57,6 +57,38 @@ Configuration: external provider fallback
 
 - The code now uses a centralized provider helper `llm_provider.py` that reads `LLM_PROVIDER` and initializes the appropriate client.
 
+Dedicated backend/API layer
+- A new FastAPI backend is available in `backend.py`.
+- Start it with:
+
+   ```powershell
+   uvicorn backend:app --reload --port 8000
+   ```
+
+- To make the Streamlit UI call the backend instead of running local logic, set:
+
+   ```powershell
+   setx BACKEND_ENABLED true
+   setx BACKEND_URL http://localhost:8000
+   ```
+
+- Run the backend and Streamlit in separate shells:
+
+   ```powershell
+   # shell 1
+   uvicorn backend:app --reload --port 8000
+
+   # shell 2
+   streamlit run app.py
+   ```
+
+- The backend exposes:
+  - `GET /v1/health`
+  - `GET /v1/series-options`
+  - `POST /v1/query`
+
+- To keep using local processing, leave `BACKEND_ENABLED` unset or false.
+
 - To use Azure OpenAI, set the following environment variables (example):
  - To use Azure OpenAI, set the following environment variables (example):
 
