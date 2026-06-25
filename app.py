@@ -163,11 +163,12 @@ with tab_chat:
         "Advanced": "#f8f4ec"
     }
     selected_mode = st.session_state.query_mode
+    #  NEW HIGH-CONTRAST CODE
     st.markdown(
-        f"<div style='background:{mode_colors[selected_mode]}; padding:14px; border-radius:8px; margin-bottom:12px;'>"
-        f"<strong>{selected_mode} mode</strong>: {mode_descriptions[selected_mode]}"
-        "</div>",
-        unsafe_allow_html=True,
+    f"<div style='background:{mode_colors[selected_mode]}; color: #111111; padding:14px; border-radius:8px; margin-bottom:12px;'>"
+    f"<strong>{selected_mode} mode</strong>: {mode_descriptions[selected_mode]}"
+    "</div>",
+    unsafe_allow_html=True,
     )
 
     for message in st.session_state.chat_history:
