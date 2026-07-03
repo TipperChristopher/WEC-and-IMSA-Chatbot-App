@@ -3,11 +3,15 @@ import sys
 import sqlite3
 import streamlit as st
 from typing import Optional, List, Any
+from pathlib import Path
+import tempfile
+import shutil
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document
+from llama_parse import LlamaParse
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 if ROOT_DIR not in sys.path:
@@ -27,6 +31,89 @@ from physics.tire_deg import predict_tire_degradation_penalty
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 USE_BACKEND = os.getenv("BACKEND_ENABLED", "false").lower() in {"1", "true", "yes"}
+
+# ========== PDF STREAMING UTILITIES ==========
+
+def parse_pdf_with_llamaparse(pdf_path: str) -> str:
+    """Parse PDF using LlamaParse and return markdown content."""
+    try:
+        parser = LlamaParse(
+            result_type="markdown",
+            verbose=False,
+            language="en",
+            instruction="Extract all tables, timing data, and structured information as markdown."
+        )
+        documents = parser.load_data(pdf_path)
+        return documents[0].text if documents else ""
+    except Exception as e:
+        st.warning(f"LlamaParse error: {e}. Falling back to basic extraction.")
+        return ""
+
+
+def stream_llm_response(prompt: str, llm_instance: Any) -> str:
+    """Stream LLM response using streaming if available."""
+    try:
+        # Try streaming if the LLM supports it
+        if hasattr(llm_instance, 'stream'):
+            with st.write_stream(llm_instance.stream(prompt)):
+                pass
+        else:
+            # Fallback: invoke without streaming, but display character by character
+            response = llm_instance.invoke(prompt)
+            
+            # Stream response display
+            placeholder = st.empty()
+            displayed_text = ""
+            for char in response:
+                displayed_text += char
+                placeholder.write(displayed_text)
+            return response
+    except Exception as e:
+        st.warning(f"Streaming error: {e}")
+        return llm_instance.invoke(prompt)
+
+
+def save_uploaded_pdf(uploaded_file, destination_folder: str = "data/manuals") -> bool:
+    """Save uploaded PDF to the manuals folder."""
+    try:
+        os.makedirs(destination_folder, exist_ok=True)
+        file_path = os.path.join(destination_folder, uploaded_file.name)
+        
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        st.success(f"✅ Saved: {uploaded_file.name}")
+        return True
+    except Exception as e:
+        st.error(f"Error saving PDF: {e}")
+        return False
+
+
+def get_available_pdfs(folder: str = "data/manuals") -> List[str]:
+    """Get list of available PDFs in the manuals folder."""
+    try:
+        if os.path.exists(folder):
+            return [f for f in os.listdir(folder) if f.lower().endswith('.pdf')]
+    except Exception:
+        pass
+    return []
+
+
+def display_pdf_preview(pdf_path: str) -> None:
+    """Display PDF preview in Streamlit."""
+    try:
+        with open(pdf_path, "rb") as pdf_file:
+            st.download_button(
+                label=f"📥 Download {os.path.basename(pdf_path)}",
+                data=pdf_file.read(),
+                file_name=os.path.basename(pdf_path),
+                mime="application/pdf"
+            )
+    except Exception as e:
+        st.warning(f"Could not display PDF preview: {e}")
+
+
+
 
 
 def call_backend_query(query: str, mode: str) -> dict:
@@ -58,9 +145,13 @@ st.markdown(
     <style>
     button[role='button'],
     button[role='button'] * {
-        background-color: #000000 !important;
-        color: #111 !important;
-        border-color: #d2d2d2 !important;
+    background-color: #1e1e1e !important;  /* Modern dark gray */
+    color: #ffffff !important;             /* High contrast crisp white text */
+    border-color: #444444 !important;
+    }
+    button[role='button']:hover {
+    background-color: #2d2d2d !important;
+    color: #00ffcc !important;             /* Subtle racing cyan highlight on hover */
     }
     button[role='button']:focus,
     button[role='button']:active,
@@ -117,12 +208,44 @@ with st.sidebar:
     st.subheader("System Status")
     st.success("Ollama Engine: Connected (Port 11434)")
     st.info("Database: trackside_timing.db active")
+    
+    # ========== PDF MANAGEMENT SECTION ==========
+    st.divider()
+    st.subheader("📚 PDF Management")
+    
+    with st.expander("Upload Technical Manuals", expanded=False):
+        uploaded_files = st.file_uploader(
+            "Drag & drop PDFs here or click to browse",
+            type=["pdf"],
+            accept_multiple_files=True
+        )
+        if uploaded_files:
+            for uploaded_file in uploaded_files:
+                if save_uploaded_pdf(uploaded_file):
+                    st.session_state.pdf_updated = True
+    
+    # Display available PDFs
+    available_pdfs = get_available_pdfs()
+    if available_pdfs:
+        with st.expander(f"Available Documents ({len(available_pdfs)})", expanded=False):
+            for pdf_file in available_pdfs:
+                pdf_path = os.path.join("data/manuals", pdf_file)
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.caption(f"📄 {pdf_file}")
+                with col2:
+                    if st.button("📥", key=f"dl_{pdf_file}"):
+                        display_pdf_preview(pdf_path)
+    
+    if not available_pdfs:
+        st.caption("ℹ️ No PDFs uploaded yet. Upload manuals to enable RAG.")
+
 
 st.title("🏎️ WEC & IMSA Cognitive Strategy & Diagnostics Assistant")
 st.markdown("---")
 
 # --- TAB 1: OFF-LINE CHATBOT ---
-tab_chat, tab_physics = st.tabs(["Offline Chatbot", "Physics Predictions"])
+tab_chat, tab_docs, tab_physics = st.tabs(["Offline Chatbot", "Documents", "Physics Predictions"])
 
 with tab_chat:
     st.subheader("Interactive Strategy & Diagnostics")
@@ -227,8 +350,7 @@ with tab_chat:
                         if not df_results.empty:
                             st.dataframe(df_results)
                             summary_prompt = f"{prompt_modifier} Summarize these timing database results for the engineer: {df_results.to_string()}"
-                            assistant_text = llm.invoke(summary_prompt)
-                            st.write(assistant_text)
+                            assistant_text = stream_llm_response(summary_prompt, llm)
                         else:
                             st.warning("No timing records matched your query.")
                             assistant_text = "No timing records matched the query."
@@ -241,15 +363,57 @@ with tab_chat:
                             query_engine = index.as_query_engine()
                             response = query_engine.query(query_text)
                             assistant_text = str(response)
-                            st.write(assistant_text)
+                            
+                            # Stream the response
+                            with st.write_stream(stream_llm_response(query_text, llm)):
+                                pass
                         except Exception:
                             st.info("Place technical PDFs (e.g. Bosch MGU/MCU troubleshooting manuals) inside 'data/manuals' to enable advanced diagnostic RAG.")
-                            assistant_text = llm.invoke(query_text)
-                            st.write(assistant_text)
+                            assistant_text = stream_llm_response(query_text, llm)
+
 
         st.session_state.chat_history.append({"role": "assistant", "content": assistant_text})
 
-# --- TAB 2: PHYSICS PREDICTIONS ---
+# --- TAB 2: DOCUMENTS ---
+with tab_docs:
+    st.subheader("📚 Technical Document Library")
+    
+    available_pdfs = get_available_pdfs()
+    
+    if available_pdfs:
+        selected_pdf = st.selectbox("Select a document to view:", available_pdfs)
+        
+        if selected_pdf:
+            pdf_path = os.path.join("data/manuals", selected_pdf)
+            
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.caption(f"**Viewing:** {selected_pdf}")
+            with col2:
+                if st.button("🔄 Parse with LlamaParse"):
+                    with st.spinner("Parsing PDF..."):
+                        content = parse_pdf_with_llamaparse(pdf_path)
+                        if content:
+                            st.text_area("Parsed Content (Markdown):", value=content, height=400, disabled=True)
+                        else:
+                            st.warning("Could not parse PDF content.")
+            
+            # Display PDF download
+            display_pdf_preview(pdf_path)
+            
+            # Show file info
+            file_size = os.path.getsize(pdf_path) / 1024  # KB
+            st.metric("File Size", f"{file_size:.1f} KB")
+    else:
+        st.info("📤 No documents uploaded yet. Use the sidebar to upload technical PDFs.")
+        st.markdown("""
+        **Supported formats:**
+        - Technical Manuals (PDF)
+        - Service Bulletins
+        - Race Strategy Guides
+        """)
+
+# --- TAB 3: PHYSICS PREDICTIONS ---
 with tab_physics:
     st.subheader("Stint Pace Decay & Degradation Forecast")
     

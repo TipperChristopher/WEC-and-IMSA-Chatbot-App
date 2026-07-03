@@ -122,6 +122,29 @@ class AzureNativeOpenAIWrapper:
         return _perform_with_retries(_call)
 
 
+class GoogleGeminiWrapper:
+    def __init__(self, model: str) -> None:
+        try:
+            import google.generativeai as genai
+        except Exception as e:
+            raise RuntimeError("google-generative-ai package required for Google provider") from e
+
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY must be set for Google provider")
+
+        genai.configure(api_key=api_key)
+        self._genai = genai
+        self.model = model
+
+    def invoke(self, prompt: str) -> str:
+        def _call():
+            response = self._genai.generate_text(model=self.model, prompt=prompt)
+            return getattr(response, "text", str(response))
+
+        return _perform_with_retries(_call)
+
+
 def get_llm():
     provider = os.getenv("LLM_PROVIDER", "ollama").lower()
     if provider == "ollama":
@@ -142,5 +165,8 @@ def get_llm():
         except Exception:
             # Fallback to openai-compatible wrapper
             return AzureOpenAIWrapper(deployment=deployment)
+    elif provider in {"google", "gemini"}:
+        model = os.getenv("GOOGLE_MODEL", "gemini-pro")
+        return GoogleGeminiWrapper(model=model)
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")

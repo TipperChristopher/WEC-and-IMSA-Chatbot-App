@@ -90,7 +90,6 @@ Dedicated backend/API layer
 - To keep using local processing, leave `BACKEND_ENABLED` unset or false.
 
 - To use Azure OpenAI, set the following environment variables (example):
- - To use Azure OpenAI, set the following environment variables (example):
 
    ```powershell
    setx LLM_PROVIDER azure
@@ -99,13 +98,29 @@ Dedicated backend/API layer
    setx AZURE_OPENAI_DEPLOYMENT <deployment_name>
    ```
 
- - Native SDK (preferred): this project prefers the native `azure-ai-openai` SDK when available. Install it with:
+- To use Google Gemini / Google GenAI, set these environment variables:
+
+   ```powershell
+   setx LLM_PROVIDER google
+   setx GOOGLE_API_KEY <your_api_key>
+   setx GOOGLE_MODEL gemini-pro
+   ```
+
+- Native SDK (preferred) for Azure: this project prefers the native `azure-ai-openai` SDK when available. Install it with:
 
    ```powershell
    pip install azure-ai-openai
    ```
 
    When installed, the app will use `azure.ai.openai.OpenAIClient` (recommended). If the native SDK is not installed, the code falls back to using the `openai` package configured for Azure.
+
+- Google Gemini support is added via the optional `google-generative-ai` package. Install it with:
+
+   ```powershell
+   pip install google-generative-ai
+   ```
+
+   If the package is not installed, the app will still run for other providers.
 
 VS Code / Pylance troubleshooting
 - If you see `Import "azure.ai.openai" could not be resolved` (Pylance), ensure the package is installed into the Python interpreter selected by VS Code:
