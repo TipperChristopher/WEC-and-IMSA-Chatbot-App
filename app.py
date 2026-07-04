@@ -51,12 +51,13 @@ def parse_pdf_with_llamaparse(pdf_path: str) -> str:
 
 
 def stream_llm_response(prompt: str, llm_instance: Any) -> str:
-    """Stream LLM response using streaming if available."""
+    """Stream LLM response using streaming if available and return the final string."""
     try:
         # Try streaming if the LLM supports it
         if hasattr(llm_instance, 'stream'):
-            with st.write_stream(llm_instance.stream(prompt)):
-                pass
+            # st.write_stream automatically returns the full concatenated string response!
+            full_text = st.write_stream(llm_instance.stream(prompt))
+            return full_text
         else:
             # Fallback: invoke without streaming, but display character by character
             response = llm_instance.invoke(prompt)
