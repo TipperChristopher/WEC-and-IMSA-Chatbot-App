@@ -124,22 +124,36 @@ class AzureNativeOpenAIWrapper:
 
 class GoogleGeminiWrapper:
     def __init__(self, model: str) -> None:
-        try:
-            import google.generativeai as genai
-        except Exception as e:
-            raise RuntimeError("google-generative-ai package required for Google provider") from e
-
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise RuntimeError("GOOGLE_API_KEY must be set for Google provider")
 
-        genai.configure(api_key=api_key)
-        self._genai = genai
+        try:
+            from google import genai as google_genai
+        except Exception:
+            try:
+                import google.generativeai as google_genai
+            except Exception as e:
+                raise RuntimeError("google-generativeai or google-genai package required for Google provider") from e
+
+        self._genai = google_genai
         self.model = model
+        self._api_key = api_key
 
     def invoke(self, prompt: str) -> str:
         def _call():
-            response = self._genai.generate_text(model=self.model, prompt=prompt)
+            try:
+                from google import genai as google_genai
+            except Exception:
+                import google.generativeai as google_genai
+
+            if hasattr(google_genai, "Client"):
+                client = google_genai.Client(api_key=self._api_key)
+                response = client.models.generate_content(model=self.model, contents=prompt)
+                return getattr(response, "text", str(response))
+
+            google_genai.configure(api_key=self._api_key)
+            response = google_genai.generate_text(model=self.model, prompt=prompt)
             return getattr(response, "text", str(response))
 
         return _perform_with_retries(_call)

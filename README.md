@@ -114,10 +114,10 @@ Dedicated backend/API layer
 
    When installed, the app will use `azure.ai.openai.OpenAIClient` (recommended). If the native SDK is not installed, the code falls back to using the `openai` package configured for Azure.
 
-- Google Gemini support is added via the optional `google-generative-ai` package. Install it with:
+- Google Gemini support is added via the optional `google-generativeai` package. Install it with:
 
    ```powershell
-   pip install google-generative-ai
+   pip install google-generativeai
    ```
 
    If the package is not installed, the app will still run for other providers.
