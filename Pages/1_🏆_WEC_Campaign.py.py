@@ -1,9 +1,18 @@
 import os
 import sys
-import sqlite3
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+
+# Force python to recognize the root workspace folder
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+# Now these imports will execute without throwing an error
+from backend_utils import execute_safe_query, get_mode_prompt, route_query_source
+from llm_provider import get_llm
+from physics.fuel_burn import calculate_fuel_corrected_time
+from physics.tire_deg import predict_tire_degradation_penalty
 
 # Ensure root directory is in path for local package imports
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +41,7 @@ if "query_mode" not in st.session_state:
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     # Official FIA WEC Logo URL
-    st.image("https://upload.wikimedia.org/wikipedia/commons/4/43/FIA_WEC_logo.svg", width=140)
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/4/43/FIA_WEC_logo.svg/320px-FIA_WEC_logo.svg.png", width=140)
 with col_title:
     st.title("FIA World Endurance Championship")
     st.caption("🤖 Hypercar & LMGT3 Pit Wall Strategy Engine")

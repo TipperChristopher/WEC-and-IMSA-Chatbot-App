@@ -1,9 +1,18 @@
 import os
 import sys
-import sqlite3
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+
+# Force python to recognize the root workspace folder
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+# Now these imports will execute without throwing an error
+from backend_utils import execute_safe_query, get_mode_prompt, route_query_source
+from llm_provider import get_llm
+from physics.fuel_burn import calculate_fuel_corrected_time
+from physics.tire_deg import predict_tire_degradation_penalty
 
 # Ensure root directory is in path for local package imports
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +41,7 @@ if "query_mode" not in st.session_state:
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     # Official IMSA Logo URL
-    st.image("https://upload.wikimedia.org/wikipedia/commons/e/ea/IMSA_Logo.svg", width=160)
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/IMSA_Logo.svg/320px-IMSA_Logo.svg.png", width=160)
 with col_title:
     st.title("IMSA WeatherTech SportsCar Championship")
     st.caption("🇺🇸 GTP, GTD Pro, & GTD Pit Wall Strategy Dashboard")
