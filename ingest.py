@@ -1,49 +1,64 @@
 import os
 from importlib import import_module
-llama_index_core = import_module("llama_index.core")
-SimpleDirectoryReader = llama_index_core.SimpleDirectoryReader
-VectorStoreIndex = llama_index_core.VectorStoreIndex
-StorageContext = llama_index_core.StorageContext
+
+_llama_index_core = import_module("llama_index.core")
+SimpleDirectoryReader = _llama_index_core.SimpleDirectoryReader
+VectorStoreIndex = _llama_index_core.VectorStoreIndex
+StorageContext = _llama_index_core.StorageContext
 try:
-    ChromaVectorStore = import_module("llama_index.vector_stores.chroma").ChromaVectorStore
-except ModuleNotFoundError as exc:
-    if exc.name == "llama_index.vector_stores.chroma":
-        raise RuntimeError(
-            "Chroma integration is required. Install it with: "
-            "pip install llama-index-vector-stores-chroma"
-        ) from exc
-    raise
+    ChromaVectorStore = import_module(
+        "llama_index.vector_stores.chroma"
+    ).ChromaVectorStore
+except ImportError as exc:
+    raise ImportError(
+        "Chroma integration is unavailable. Install it with: "
+        "pip install llama-index-vector-stores-chroma"
+    ) from exc
 
 def run_ingestion():
-    pdf_dir = "data/manuals"
-    db_path = "data/chroma_db"
+    try:
+        LlamaParse = import_module("llama_parse").LlamaParse
+    except ImportError as exc:
+        raise ImportError(
+            "LlamaParse is not installed. Install it with: pip install llama-parse"
+        ) from exc
+
+    # Update the path to match your folder structure
+    pdf_dir = "PDF Files for the Research"
+    db_path = "db/chroma_db" # Let's save the vector DB in your existing 'db' folder
     
     if not os.path.exists(pdf_dir) or not os.listdir(pdf_dir):
         print(f"No PDF files found in {pdf_dir}")
         return
 
     print("Initializing LlamaParse parser...")
-    # LlamaParse converts complex multi-column PDFs & tables into clean Markdown
-    try:
-        LlamaParse = import_module("llama_parse").LlamaParse
-    except ModuleNotFoundError as exc:
-        if exc.name == "llama_parse":
-            raise RuntimeError("LlamaParse is required. Install it with: pip install llama-parse") from exc
-        raise
-
     parser = LlamaParse(
         result_type="markdown",
-        verbose=True,
-        # api_key=os.getenv("LLAMA_CLOUD_API_KEY") # Required for LlamaParse
+        verbose=True
     )
     
     file_extractor = {".pdf": parser}
     
-    print("Extracting PDF contents...")
-    reader = SimpleDirectoryReader(input_dir=pdf_dir, file_extractor=file_extractor)
+    # We define a function to filter ONLY the rulebooks and ignore university docs
+    def file_filter(file_path: str) -> bool:
+        file_name = os.path.basename(file_path).lower()
+        # Ignore your COMPSCI and ENGGEN research project files
+        if "compsci" in file_name or "enggen" in file_name or "research" in file_name:
+            return False
+        return True
+
+    print(f"Extracting specific PDF contents from {pdf_dir}...")
+    reader = SimpleDirectoryReader(
+        input_dir=pdf_dir, 
+        file_extractor=file_extractor,
+        file_metadata=lambda filename: {"file_name": os.path.basename(filename)}
+    )
+    
+    # Manually filter the files before loading
+    reader.input_files = [f for f in reader.input_files if file_filter(str(f))]
     documents = reader.load_data()
 
-    # Automatically attach series metadata based on filename
+    # Attach series metadata so the chatbot knows which rules apply to WEC vs IMSA
     for doc in documents:
         file_name = doc.metadata.get("file_name", "").lower()
         if "wec" in file_name:
@@ -54,10 +69,10 @@ def run_ingestion():
             doc.metadata["series"] = "General"
 
     print("Storing embeddings in ChromaDB...")
-    chromadb = import_module("chromadb")
-    db = chromadb.PersistentClient(path=db_path)
-    chroma_collection = db.get_or_create_collection("racing_regulations")
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    vector_store = ChromaVectorStore.from_params(
+        collection_name="racing_regulations",
+        persist_dir=db_path,
+    )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
     VectorStoreIndex.from_documents(
@@ -65,7 +80,7 @@ def run_ingestion():
         storage_context=storage_context,
         show_progress=True
     )
-    print("Ingestion complete! Index saved to data/chroma_db")
+    print(f"Ingestion complete! Index saved to {db_path}")
 
 if __name__ == "__main__":
     run_ingestion()
